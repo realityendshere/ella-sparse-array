@@ -1,7 +1,7 @@
 {
   "name": "ella-sparse-array",
   "version": "0.0.0",
-  "description": "The default blueprint for ember-cli addons.",
+  "description": "Sparse array structure for fetching large collections of records a few at a time.",
   "directories": {
     "doc": "doc",
     "test": "tests"
@@ -11,11 +11,11 @@
     "build": "ember build",
     "test": "ember try:testall"
   },
-  "repository": "",
+  "repository": "https://github.com/realityendshere/ella-sparse-array.git",
   "engines": {
     "node": ">= 0.10.0"
   },
-  "author": "",
+  "author": "Dana Franklin",
   "license": "MIT",
   "devDependencies": {
     "broccoli-asset-rev": "^2.0.2",
@@ -38,10 +38,17 @@
     "ember-try": "0.0.6"
   },
   "keywords": [
-    "ember-addon"
+    "ember-addon",
+    "emberella",
+    "ella",
+    "sparse array",
+    "SparseArray"
   ],
   "dependencies": {
-    "ember-cli-babel": "^5.0.0"
+    "ember-cli-babel": "^5.0.0",
+    "ember-cli-coffeescript": "^1.13.0",
+    "ember-cli-version-checker": "^1.1.4",
+    "lodash": "^3.10.1"
   },
   "ember-addon": {
     "configPath": "tests/dummy/config"
