@@ -2,9 +2,12 @@
 
 get = Ember.get
 set = Ember.set
+setProperties = Ember.setProperties
 typeOf = Ember.typeOf
 ObjectProxy = Ember.ObjectProxy
 computed = Ember.computed
+
+DEFAULT_TTL = 36000000
 
 # SparseArrayItem uses snake case to try to avoid naming conflicts with
 # proxied content
@@ -21,30 +24,39 @@ SparseArrayItem = ObjectProxy.extend
 
   last_fetched_at: 0
 
-  time_to_live: 36000000
+  time_to_live: DEFAULT_TTL
 
   is_stale: computed('last_fetched_at', 'time_to_live', {
     get: ->
       (get(@, 'last_fetched_at') + get(@, 'time_to_live')) <= Date.now()
   })
 
-  is_loading: computed('content', 'content.isLoading', {
-    get: ->
-      !get(@, 'content') || get(@, 'content.isLoading')
-  })
+  is_loading: false
 
   resolve: (value) ->
-    set(@, 'last_fetched_at', Date.now())
-    set(@, 'content', value)
+    setProperties(@, {
+      content: value
+      is_loading: false
+      last_fetched_at: Date.now()
+    })
+
     @
 
+  resetItem: ->
+    setProperties(@, {
+      content: null
+      last_fetched_at: 0
+    })
+    @
+
+  isExpiredAt: (timestamp) ->
+    return false if get(@, 'is_loading')
+    !!(get(@, 'is_stale') or get(@, 'last_fetched_at') <= timestamp)
 
 
 EllaSparseArray = Ember.Object.extend Ember.Array,
   init: ->
-    # @_TMP_PROVIDE_ARRAY = []
-    # @_TMP_PROVIDE_RANGE = length: 1
-    @_TMP_RANGE = {}
+    set(@, 'data', Ember.A())
     @_super()
 
   ###
@@ -66,7 +78,7 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
     @type {Array}
     @default []
   ###
-  data: Ember.A()
+  data: null
 
   ###
     Hook for initiating requests for the total number of objects available to
@@ -74,11 +86,14 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
     this object to obtain its length.
 
     If the request is successful, set the length of this sparse array
-    object using the `provideLength` method.
+    object using the `provideLength` callback method.
 
     @method didRequestLength
   ###
-  didRequestLength: null
+  didRequestLength: ->
+    Ember.assert('Define a custom `didRequestLength` function to enable EllaSparseArray to fetch length data')
+    @provideLength(get(@, '_length') ? 0)
+    @
 
   ###
     Hook for range requests. Override this method to enable this sparse array
@@ -97,6 +112,20 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
   didRequestRange: null
 
   ###
+    Hook for single object requests. Override this method to enable this
+    controller to obtain a single persisted object.
+
+    If the request is successful, insert the fetched object into the sparse
+    array using the `provideObjectAtIndex` method.
+
+    @method didRequestIndex
+    @param {Integer} idx
+  ###
+  didRequestIndex: ->
+    Ember.assert('Define a custom `didRequestIndex` or `didRequestRange` function to enable EllaSparseArray to fetch data')
+    @
+
+  ###
     @property isSparseArray
     @type Boolean
     @default true
@@ -105,14 +134,13 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
   isSparseArray: true #quack like a duck
 
   ###
-    The number of items to fetch together in a single request. Essentially,
-    the "page size" of each query.
+    Any items resolved prior to this time should be considered stale.
 
-    @property rangeSize
+    @property expired
     @type {Integer}
-    @default 1
+    @default 0
   ###
-  rangeSize: 10
+  expired: 0
 
   ###
     Flag to indicate if this sparse array should attempt to fetch data.
@@ -131,6 +159,26 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
     @default false
   ###
   isRequestingLength: false
+
+  ###
+    The number of items to fetch together in a single request. Essentially,
+    the "page size" of each query.
+
+    @property rangeSize
+    @type {Integer}
+    @default 10
+  ###
+  rangeSize: 10
+
+  ###
+    How long until a previously loaded item becomes stale.
+    Default is 10 minutes.
+
+    @property ttl
+    @type {Integer}
+    @default 36000000
+  ###
+  ttl: DEFAULT_TTL
 
   ###
     The total number of potential items in the sparse array. If the length is
@@ -165,6 +213,41 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
   })
 
   ###
+    The last object in the sparse array (will fetch the last "page" of data).
+
+    @property lastObject
+    @type {Mixed}
+    @default undefined
+    @readOnly
+  ###
+  lastObject: computed('length', {
+    get: ->
+      len = get(@, 'length')
+      return undefined if len is 0
+      @objectAt(len - 1)
+  })
+
+  ###
+    Enable data fetching.
+
+    @method enableRequests
+    @chainable
+  ###
+  enableRequests: ->
+    set(@, 'isStreaming', true)
+    @
+
+  ###
+    Disable data fetching.
+
+    @method disableRequests
+    @chainable
+  ###
+  disableRequests: ->
+    set(@, 'isStreaming', false)
+    @
+
+  ###
     Get the data from the specified index.
 
     If an object is found at a given index, it will be returned immediately.
@@ -185,8 +268,25 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
     return undefined if get(@, 'isLength') and idx >= get(@, 'length')
 
     result = get(@, @_pathForIndex(idx)) ? @insertSparseArrayItem(idx)
-    return result if (result and get(result, 'is_stale') isnt true)
+    if (result and result.isExpiredAt(get(@, 'expired')) isnt true)
+      return result
     @requestObjectAt(idx, dontFetch)
+
+  ###
+    Fetches data regarding the total number of objects in the
+    persistence layer.
+
+    @method requestLength
+    @return {Integer} The current known length
+  ###
+  requestLength: ->
+    len = get(@, '_length')
+
+    if typeOf(@didRequestLength) is 'function' and !get(@, 'isRequestingLength')
+      set @, 'isRequestingLength', true
+      @_didRequestLength()
+
+    len
 
   ###
     Fetches data at the specified index. If `rangeSize` is greater than 1, this
@@ -204,34 +304,43 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
 
     start = Math.floor(idx / rangeSize) * rangeSize
     start = Math.max start, 0
-    placeholders = Math.min((start + rangeSize), get(@, 'length'))
+    placeholders = start + rangeSize
+    placeholders = Math.min(placeholders, get(@, 'length')) if get(@, 'isLength')
+
     @insertSparseArrayItems([start...placeholders])
 
-    if typeOf(@requestLength) is 'function'
-      range = @_TMP_RANGE
-      range.start = start
-      range.length = rangeSize
-      @_didRequestRange(range)
+    if typeOf(@didRequestRange) is 'function'
+      @_didRequestRange({start: start, length: rangeSize})
     else
       @_didRequestIndex(i) for i in [start...rangeSize]
 
     get(@, @_pathForIndex(idx))
 
   ###
-    Fetches data regarding the total number of objects in the
-    persistence layer.
+    Empty the sparse data.
 
-    @method requestLength
-    @return {Integer} The current known length
+    @method reset
+    @chainable
   ###
-  requestLength: ->
+  reset: ->
+    @beginPropertyChanges()
     len = get(@, '_length')
+    @_clearData()
+    set(@, '_length', len)
+    @endPropertyChanges()
+    @
 
-    if typeOf(@requestLength) is 'function' and !get(@, 'isRequestingLength')
-      set @, 'isRequestingLength', true
-      @_didRequestLength()
+  ###
+    Uncache the item at the specified index.
 
-    len
+    @method unset
+    @param {Integer} idx The index to unset
+    @chainable
+  ###
+  unset: (idx...) ->
+    indexes = [].concat.apply([], idx)
+    @_unset(i) for i in indexes
+    @
 
   #INJECT PLACEHOLDER OBJECTS
 
@@ -240,14 +349,13 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
 
     @method insertSparseArrayItem
     @param {Integer} idx Where to inject a placeholder
-    @param {Boolean} force If true, placeholder replaces existing content
     @return {Object}
   ###
-  insertSparseArrayItem: (idx, force = false) ->
-    currentValue = get(@, @_pathForIndex(idx))
-    sparseItem = SparseArrayItem.create()
-    set(@, @_pathForIndex(idx), sparseItem) if force or !currentValue?
-    get(@, @_pathForIndex(idx))
+  insertSparseArrayItem: (idx) ->
+    path = @_pathForIndex(idx)
+    if !get(@, path)?
+      set(@, path, SparseArrayItem.create(time_to_live:  get(@, 'ttl')))
+    get(@, path)
 
   ###
     Insert placeholder objects at the specified indexes.
@@ -273,6 +381,7 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
   provideLength: (length) ->
     set @, '_length', length
     set @, 'isRequestingLength', false
+    @_lengthDidChange()
     @
 
   ###
@@ -290,7 +399,23 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
   provideObjectsInRange: (range, array) ->
     for value, idx in array
       item = get(@, @_pathForIndex(range.start + idx))
-      item.resolve value
+      item?.resolve(value)
+    @
+
+  ###
+    @private
+
+    Empty the sparse array.
+
+    @method _clearSparseContent
+  ###
+  _clearData: ->
+    data = get(@, 'data')
+
+    if data and 'function' is typeOf(data.clear)
+      data.clear()
+    else
+      set(@, 'data', Ember.A())
     @
 
   ###
@@ -302,7 +427,7 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
     @method _didRequestLength
   ###
   _didRequestLength: ->
-    @didRequestLength()
+    @didRequestLength.call(@)
 
   ###
     @private
@@ -318,7 +443,19 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
   ###
   _didRequestRange: (range) ->
     @_markSparseArrayItemInProgress(idx) for idx in [range.start...(range.start + range.length)]
-    @didRequestRange(range)
+    @didRequestRange.call(@, range)
+
+  ###
+    @private
+
+    Prepare to fetch a single object from the persistence layer.
+
+    @method _didRequestIndex
+    @param {Integer} idx
+  ###
+  _didRequestIndex: (idx) ->
+    @_markSparseArrayItemInProgress(idx)
+    @didRequestIndex.call(@, idx)
 
   ###
     @private
@@ -331,7 +468,26 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
   ###
   _markSparseArrayItemInProgress: (idx) ->
     item = get(@, @_pathForIndex(idx))
-    set(item, 'content', null) if item?
+    if item?
+      setProperties(item, {
+        content: null
+        is_loading: true
+      })
+    @
+
+  ###
+    @private
+
+    Uncache the item at the specified index.
+
+    @method _unset
+    @param {Integer} idx The index to unset
+    @chainable
+  ###
+  _unset: (idx) ->
+    return @ unless idx?
+    item = get(@, @_pathForIndex(idx))
+    item?.resetItem()
     @
 
   _pathForIndex: (idx) ->
@@ -345,7 +501,7 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
     @method _lengthDidChange
   ###
   _lengthDidChange: Ember.observer ->
-    length = get(@, 'length') ? 0
+    length = get(@, 'length')
     data = get(@, 'data')
     data.length = length if Ember.isArray(data) and data.length isnt length
   , 'length'
