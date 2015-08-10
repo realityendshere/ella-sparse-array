@@ -2,7 +2,7 @@ import Ember from "ember";
 import { test } from 'ember-qunit';
 import EllaSparseArray from 'ella-sparse-array/lib/sparse-array';
 
-var TOTAL_RECORDS = 103935;
+var TOTAL_RECORDS = 103941;
 
 var fetchTestObjects = function(offset, limit) {
   var max = TOTAL_RECORDS;
@@ -15,7 +15,8 @@ var fetchTestObjects = function(offset, limit) {
     for (i = offset; i < offset + limit; ++i) {
       obj = Ember.Object.create({
         id: i + 1,
-        note: 'This is item ' + (i + 1)
+        note: 'This is item ' + (i + 1),
+        updatedAt: Date.now()
       });
 
       if (i < max) {
@@ -121,6 +122,12 @@ test('Sparse array isRequestingLength updates when length requested', function(a
   assert.equal(arr.get('isRequestingLength'), true);
 });
 
+test('Sparse array expired starts at 0', function(assert) {
+  assert.expect(1);
+  var arr = EllaSparseArray.create(doNothingRequestFunctions);
+  assert.equal(arr.get('expired'), 0);
+});
+
 test('.provideLength sets the length property and updates isRequestingLength', function(assert) {
   assert.expect(3);
   var arr = EllaSparseArray.create(doNothingRequestFunctions);
@@ -203,6 +210,28 @@ test('Item properties are updated once fetched', function(assert) {
   return deferred.promise.then(function() {
     assert.equal(item1.get('note'), note + '1');
     assert.equal(item2.get('note'), note + '724');
+  });
+});
+
+test('.objectAt does not fetch data when sent a truthy second argument', function(assert) {
+  assert.expect(2);
+  var arr = EllaSparseArray.create(didRequestFunctions);
+  var deferred = Ember.RSVP.defer();
+  var item1, item2;
+
+  Ember.run(function() {
+    arr.get('length');
+    item1 = arr.objectAt(0, true);
+    item2 = arr.objectAt(723, true);
+  });
+
+  Ember.run.later(function() {
+    deferred.resolve();
+  }, 50);
+
+  return deferred.promise.then(function() {
+    assert.ok(!item1.get('content'));
+    assert.ok(!item2.get('content'));
   });
 });
 
@@ -298,5 +327,160 @@ test('.unset removes content from SparseArrayItems and marks them stale', functi
   });
 });
 
+test('SparseArrayItem time_to_live inherits SparseArray ttl', function(assert) {
+  assert.expect(2);
+  var arr = EllaSparseArray.create({
+    didRequestLength: doNothingRequestFunctions.didRequestLength,
+    didRequestRange: doNothingRequestFunctions.didRequestRange,
+    ttl: 50
+  });
+  var item;
 
+  item = arr.objectAt(0);
+
+  assert.equal(item.get('time_to_live'), arr.get('ttl'));
+  assert.equal(item.get('time_to_live'), 50);
+});
+
+test('SparseArrayItem appears stale after ttl ms', function(assert) {
+  assert.expect(2);
+  var deferred = Ember.RSVP.defer();
+  var arr = EllaSparseArray.create(didRequestFunctions);
+  var item;
+
+  Ember.run(function() {
+    arr.get('length');
+    item = arr.objectAt(0);
+  });
+
+  Ember.run.later(function() {
+    deferred.resolve();
+  }, 50);
+
+  return deferred.promise.then(function() {
+    assert.equal(item.get('is_stale'), false);
+    item.set('time_to_live', 10);
+    assert.equal(item.get('is_stale'), true);
+  });
+});
+
+test('SparseArrayItem .isExpiredAt initially returns true', function(assert) {
+  assert.expect(1);
+  var arr = EllaSparseArray.create(didRequestFunctions);
+  var item;
+
+  item = arr.objectAt(0, true);
+  assert.equal(item.isExpiredAt(arr.get('expired')), true);
+});
+
+test('SparseArrayItem .isExpiredAt returns false while loading and after item is resolved', function(assert) {
+  assert.expect(4);
+  var deferred = Ember.RSVP.defer();
+  var arr = EllaSparseArray.create(didRequestFunctions);
+  var item;
+
+  arr.get('length');
+  item = arr.objectAt(0);
+
+  assert.equal(item.get('is_loading'), true);
+  assert.equal(item.isExpiredAt(arr.get('expired')), false);
+
+  Ember.run.later(function() {
+    deferred.resolve();
+  }, 50);
+
+  return deferred.promise.then(function() {
+    assert.equal(item.get('is_loading'), false);
+    assert.equal(item.isExpiredAt(arr.get('expired')), false);
+  });
+});
+
+test('Calling .expire causes SparseArrayItems to appear stale', function(assert) {
+  assert.expect(4);
+  var deferred = Ember.RSVP.defer();
+  var arr = EllaSparseArray.create(didRequestFunctions);
+  var item;
+
+  arr.get('length');
+  item = arr.objectAt(0);
+
+  Ember.run.later(function() {
+    deferred.resolve();
+  }, 50);
+
+  return deferred.promise.then(function() {
+    assert.equal(item.get('is_loading'), false);
+    assert.equal(item.isExpiredAt(arr.get('expired')), false);
+
+    Ember.run(function() {
+      arr.expire();
+    });
+
+    assert.equal(item.get('is_loading'), false);
+    assert.equal(item.isExpiredAt(arr.get('expired')), true);
+  });
+});
+
+test('Calling .expire causes SparseArrayItems to be fetched again', function(assert) {
+  assert.expect(3);
+  var deferred1 = Ember.RSVP.defer(), deferred2 = Ember.RSVP.defer();
+  var arr = EllaSparseArray.create(didRequestFunctions);
+  var items, upinit_1, upinit_2, upinit_3, upaft_1, upaft_2, upaft_3;
+
+  items = arr.objectsAt([4, 5, 6, 3110, 78901]);
+
+  Ember.run.later(function() {
+    deferred1.resolve();
+  }, 50);
+
+  deferred1.promise.then(function() {
+    upinit_1 = items[0].get('updatedAt');
+    upinit_2 = items[2].get('updatedAt');
+    upinit_3 = items[4].get('updatedAt');
+
+    arr.expire();
+
+    items = arr.objectsAt([4, 5, 6, 3110, 78901]);
+
+    Ember.run.later(function() {
+      deferred2.resolve();
+    }, 50);
+  });
+
+  return deferred2.promise.then(function() {
+    upaft_1 = items[0].get('updatedAt');
+    upaft_2 = items[2].get('updatedAt');
+    upaft_3 = items[4].get('updatedAt');
+    assert.ok(upaft_1 > upinit_1);
+    assert.ok(upaft_2 > upinit_2);
+    assert.ok(upaft_3 > upinit_3);
+  });
+});
+
+test('lastObject matches item at index length - 1', function(assert) {
+  assert.expect(2);
+  var deferred1 = Ember.RSVP.defer(), deferred2 = Ember.RSVP.defer();
+  var arr = EllaSparseArray.create(didRequestFunctions);
+  var item1, item2;
+
+  arr.get('length');
+
+  Ember.run.later(function() {
+    deferred1.resolve();
+  }, 50);
+
+  deferred1.promise.then(function() {
+    item1 = arr.get('lastObject');
+    item2 = arr.objectAt(TOTAL_RECORDS - 1);
+
+    Ember.run.later(function() {
+      deferred2.resolve();
+    }, 50);
+  });
+
+  return deferred2.promise.then(function() {
+    assert.equal(item1, item2);
+    assert.equal(item1.get('note'), 'This is item ' + (TOTAL_RECORDS));
+  });
+});
 
