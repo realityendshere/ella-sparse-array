@@ -36,7 +36,7 @@ Once you have imported a reference to the library, you can instantiate a new spa
 var arr = EllaSparseArray.create();
 ```
 
-Of course, if you do that, you'll get an error when trying to get any data. Sparse Arrays begin life empty and pretty entirely unsure of what type of data they are meant to show. You will have to "teach" your sparse arrays how to get data by providing two data fetching methods: `didRequestLength` and `didRequestRange`.
+Of course, if you do that, you'll get an error when trying to get any data. Sparse Arrays begin life empty and pretty entirely unsure of what type of data they are meant to contain. You will have to "teach" your sparse arrays how to get data by providing two data fetching methods: `didRequestLength` and `didRequestRange`.
 
 For example, if you were using Ember Data, you might request length and range like this:
 
