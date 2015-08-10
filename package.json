@@ -1,6 +1,6 @@
 {
   "name": "ella-sparse-array",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Sparse array structure for fetching large collections of records a few at a time.",
   "directories": {
     "doc": "doc",
