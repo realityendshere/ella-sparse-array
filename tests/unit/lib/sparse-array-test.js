@@ -1,8 +1,10 @@
 import Ember from "ember";
+import QUnit from "qunit";
 import { test } from 'ember-qunit';
 import EllaSparseArray from 'ella-sparse-array/lib/sparse-array';
 
 var TOTAL_RECORDS = 103941;
+var requestCount = 0;
 
 var fetchTestObjects = function(offset, limit) {
   var max = TOTAL_RECORDS;
@@ -62,6 +64,8 @@ var didRequestFunctions = {
 
     console.log("Requesting ::", range);
 
+    requestCount = requestCount + 1;
+
     fetchTestObjects(range['start'], range['length']).then(function(response) {
       _this.provideLength(response.meta.total);
       _this.provideObjectsInRange(range, response['data']);
@@ -69,7 +73,12 @@ var didRequestFunctions = {
   },
 };
 
-
+QUnit.module('ella-sparse-array:lib:sparse-array', {
+  unit: true,
+  beforeEach: function() {
+    requestCount = 0;
+  }
+});
 
 test('Sparse array exists', function(assert) {
   assert.expect(2);
@@ -395,6 +404,29 @@ test('SparseArrayItem .isExpiredAt returns false while loading and after item is
   });
 });
 
+test('SparseArray only requests each page once', function(assert) {
+  assert.expect(3);
+  var arr = EllaSparseArray.create(didRequestFunctions);
+  var deferred = Ember.RSVP.defer();
+  var note = 'This is item ';
+  var items;
+
+  Ember.run(function() {
+    arr.get('length');
+    items = arr.objectsAt([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  });
+
+  Ember.run.later(function() {
+    deferred.resolve();
+  }, 50);
+
+  return deferred.promise.then(function() {
+    assert.equal(items[0].get('note'), note + '1');
+    assert.equal(items[9].get('note'), note + '10');
+    assert.equal(requestCount, 1);
+  });
+});
+
 test('Calling .expire causes SparseArrayItems to appear stale', function(assert) {
   assert.expect(4);
   var deferred = Ember.RSVP.defer();
@@ -422,7 +454,7 @@ test('Calling .expire causes SparseArrayItems to appear stale', function(assert)
 });
 
 test('Calling .expire causes SparseArrayItems to be fetched again', function(assert) {
-  assert.expect(3);
+  assert.expect(4);
   var deferred1 = Ember.RSVP.defer(), deferred2 = Ember.RSVP.defer();
   var arr = EllaSparseArray.create(didRequestFunctions);
   var items, upinit_1, upinit_2, upinit_3, upaft_1, upaft_2, upaft_3;
@@ -454,6 +486,8 @@ test('Calling .expire causes SparseArrayItems to be fetched again', function(ass
     assert.ok(upaft_1 > upinit_1);
     assert.ok(upaft_2 > upinit_2);
     assert.ok(upaft_3 > upinit_3);
+
+    assert.equal(requestCount, 6);
   });
 });
 
