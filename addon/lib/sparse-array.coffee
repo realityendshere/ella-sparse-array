@@ -49,7 +49,7 @@ SparseArrayItem = ObjectProxy.extend
     })
     @
 
-  isExpiredAt: (timestamp) ->
+  isExpiredAt: (timestamp = 0) ->
     return false if get(@, 'is_loading')
     !!(get(@, 'is_stale') or get(@, 'last_fetched_at') <= timestamp)
 
@@ -270,7 +270,7 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
     result = get(@, @_pathForIndex(idx)) ? @insertSparseArrayItem(idx)
     if (result and result.isExpiredAt(get(@, 'expired')) isnt true)
       return result
-    @requestObjectAt(idx, dontFetch)
+    @_requestObjectAt(idx, dontFetch)
 
   ###
     Fetches data regarding the total number of objects in the
@@ -289,35 +289,17 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
     len
 
   ###
-    Fetches data at the specified index. If `rangeSize` is greater than 1, this
-    method will also retrieve adjacent items to form a "page" of results.
+    All items will appear to be stale when fetching with `.objectAt`.
 
-    @method requestObjectAt
-    @param {Integer} idx The index to fetch content for
-    @param {Boolean} dontFetch Won't obtain remote data if `true`
-    @return {Object|Null} A placeholder object or null if content is empty
+    @method expire
+    @chainable
   ###
-  requestObjectAt: (idx, dontFetch = !get(@, 'isStreaming')) ->
-    return (get(@, @_pathForIndex(idx)) ? @insertSparseArrayItem(idx)) if dontFetch
-
-    rangeSize = parseInt(get(@, 'rangeSize'), 10) || 1
-
-    start = Math.floor(idx / rangeSize) * rangeSize
-    start = Math.max start, 0
-    placeholders = start + rangeSize
-    placeholders = Math.min(placeholders, get(@, 'length')) if get(@, 'isLength')
-
-    @insertSparseArrayItems([start...placeholders])
-
-    if typeOf(@didRequestRange) is 'function'
-      @_didRequestRange({start: start, length: rangeSize})
-    else
-      @_didRequestIndex(i) for i in [start...rangeSize]
-
-    get(@, @_pathForIndex(idx))
+  expire: ->
+    set(@, 'expired', Date.now())
+    @
 
   ###
-    Empty the sparse data.
+    Empty the sparse data. (The "nuclear option.")
 
     @method reset
     @chainable
@@ -417,6 +399,37 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
     else
       set(@, 'data', Ember.A())
     @
+
+  ###
+    @private
+
+    Fetches data at the specified index. If `rangeSize` is greater than 1, this
+    method will also retrieve adjacent items to form a "page" of results.
+
+    @method _requestObjectAt
+    @param {Integer} idx The index to fetch content for
+    @param {Boolean} dontFetch Won't obtain remote data if `true`
+    @return {Object|Null} A placeholder object or null if content is empty
+  ###
+  _requestObjectAt: (idx, dontFetch = !get(@, 'isStreaming')) ->
+    return (get(@, @_pathForIndex(idx)) ? @insertSparseArrayItem(idx)) if dontFetch
+
+    rangeSize = parseInt(get(@, 'rangeSize'), 10) || 1
+
+    start = Math.floor(idx / rangeSize) * rangeSize
+    start = Math.max start, 0
+    placeholders = start + rangeSize
+    placeholders = Math.min(placeholders, get(@, 'length')) if get(@, 'isLength')
+
+    @insertSparseArrayItems([start...placeholders])
+
+    if typeOf(@didRequestRange) is 'function'
+      @_didRequestRange({start: start, length: rangeSize})
+    else
+      @_didRequestIndex(i) for i in [start...rangeSize]
+
+    get(@, @_pathForIndex(idx))
+
 
   ###
     @private
