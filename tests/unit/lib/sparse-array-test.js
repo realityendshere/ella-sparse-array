@@ -70,7 +70,7 @@ var didRequestFunctions = {
       _this.provideLength(response.meta.total);
       _this.provideObjectsInRange(range, response['data']);
     });
-  },
+  }
 };
 
 QUnit.module('ella-sparse-array:lib:sparse-array', {
