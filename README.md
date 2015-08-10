@@ -2,7 +2,7 @@
 
 I accept friendly pull requests and feedback.
 
-Also, use this addon at your own risk. It could be capable of anything including scaring your cat (even if you don't own a cat) or burning your toast (nobody *really* likes burnt toast). Please use caution when using addons that are not yet complete.
+Also, use this addon at your own risk. It could be capable of anything, including scaring your cat (even if you don't own a cat) or burning your toast (nobody *really* likes burnt toast). Please use caution when using addons that are not yet complete.
 
 # Emberella Sparse Array
 
@@ -30,7 +30,7 @@ Anywhere you wish to use the Emberella Sparse Array library, add the following t
 import EllaSparseArray from 'ella-sparse-array/lib/sparse-array';
 ```
 
-Once you have imported a reference to the library, you can instantiate a new sparse array with"
+Once you have imported a reference to the library, you can instantiate a new sparse array with:
 
 ```javascript
 var arr = EllaSparseArray.create();
