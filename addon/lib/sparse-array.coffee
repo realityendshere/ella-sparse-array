@@ -12,6 +12,13 @@ DEFAULT_TTL = 36000000
 # SparseArrayItem uses snake case to try to avoid naming conflicts with
 # proxied content
 
+###
+  `SparseArrayItem` is an object proxy for managing individual items in
+  an `EllaSparseArray`.
+
+  @class SparseArrayItem
+###
+
 SparseArrayItem = ObjectProxy.extend
 
   ###
@@ -22,17 +29,54 @@ SparseArrayItem = ObjectProxy.extend
   ###
   isSparseArrayItem: true #quack like a duck
 
+  ###
+    The Javascript Unix timestamp representing the last time the content for
+    this item was provided.
+
+    @property last_fetched_at
+    @type Integer
+    @default 0
+  ###
   last_fetched_at: 0
 
+  ###
+    The number of ms until this item is automatically considered stale.
+    The default value is 10 minutes.
+
+    @property time_to_live
+    @type Integer
+    @default 36000000
+  ###
   time_to_live: DEFAULT_TTL
 
+  ###
+    Loading state of the item.
+
+    @property is_loading
+    @type Boolean
+    @default false
+  ###
+  is_loading: false
+
+  ###
+    Helps to determine if this item should be fetched or not.
+
+    @property is_stale
+    @type Boolean
+    @default true
+  ###
   is_stale: computed('last_fetched_at', 'time_to_live', {
     get: ->
       (get(@, 'last_fetched_at') + get(@, 'time_to_live')) <= Date.now()
   })
 
-  is_loading: false
+  ###
+    Provide fetched content this item should represent.
 
+    @method resolve
+    @param {Object} The content for this item
+    @chainable
+  ###
   resolve: (value) ->
     setProperties(@, {
       content: value
@@ -42,6 +86,12 @@ SparseArrayItem = ObjectProxy.extend
 
     @
 
+  ###
+    Clear the content from this item and mark it stale.
+
+    @method resetItem
+    @chainable
+  ###
   resetItem: ->
     setProperties(@, {
       content: null
@@ -49,10 +99,42 @@ SparseArrayItem = ObjectProxy.extend
     })
     @
 
+  ###
+    Given a timestamp, determines if the content should be fetched from the
+    persistence layer.
+
+    @method isExpiredAt
+    @param {Integer} A timestamp
+    @return {Boolean}
+  ###
   isExpiredAt: (timestamp = 0) ->
     return false if get(@, 'is_loading')
     !!(get(@, 'is_stale') or get(@, 'last_fetched_at') <= timestamp)
 
+
+###
+  `EllaSparseArray` provides an array-like structure that can fetch portions of
+  data from a persistence layer on demand.
+
+  @example
+    var sparseArray = EllaSparseArray.create({
+      didRequestLength: function() {
+        var _this = this;
+        store.query('cat', {page: {offset: 0, limit: 1}}).then(function(response) {
+          _this.provideLength(Ember.get(response, 'meta.page.total'));
+        });
+      },
+      didRequestRange: function(range) {
+        var _this = this;
+        store.query('cat', {page: {offset: range.start, limit: range.length}}).then(function(response) {
+          _this.provideLength(Ember.get(response, 'meta.page.total'));
+          _this.provideObjectsInRange(range, response.get('content').mapBy('record'));
+        });
+      }
+    });
+
+  @class EllaSparseArray
+###
 
 EllaSparseArray = Ember.Object.extend Ember.Array,
   init: ->
