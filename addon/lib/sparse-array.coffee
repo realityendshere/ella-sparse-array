@@ -6,6 +6,7 @@ setProperties = Ember.setProperties
 typeOf = Ember.typeOf
 ObjectProxy = Ember.ObjectProxy
 computed = Ember.computed
+observer = Ember.observer
 
 DEFAULT_TTL = 36000000
 
@@ -595,10 +596,10 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
 
     @method _lengthDidChange
   ###
-  _lengthDidChange: Ember.observer ->
+  _lengthDidChange: observer('length', ->
     length = get(@, 'length')
     data = get(@, 'data')
     data.length = length if Ember.isArray(data) and data.length isnt length
-  , 'length'
+  )
 
 `export default EllaSparseArray`
