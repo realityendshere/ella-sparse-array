@@ -296,6 +296,15 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
   })
 
   ###
+    True if remote length value not fetched.
+
+    @property isLoading
+    @type {Boolean}
+    @default true
+  ###
+  isLoading: computed.not 'isLength'
+
+  ###
     The last object in the sparse array (will fetch the last "page" of data).
 
     @property lastObject

@@ -93,10 +93,27 @@ test('Sparse array instantiates with _length of null', function(assert) {
   assert.equal(arr.get('_length'), null);
 });
 
-test('Sparse array instantiates with isLength of false', function(assert) {
-  assert.expect(1);
-  var arr = EllaSparseArray.create(doNothingRequestFunctions);
+test('Sparse array instantiates with isLength of false, isLoading of true', function(assert) {
+  assert.expect(5);
+  var deferred = Ember.RSVP.defer();
+  var arr = EllaSparseArray.create(didRequestFunctions);
+
   assert.equal(arr.get('isLength'), false);
+  assert.equal(arr.get('isLoading'), true);
+
+  Ember.run(function() {
+    arr.get('length');
+  });
+
+  Ember.run.later(function() {
+    deferred.resolve();
+  }, 50);
+
+  return deferred.promise.then(function() {
+    assert.equal(arr.get('length'), TOTAL_RECORDS);
+    assert.equal(arr.get('isLength'), true);
+    assert.equal(arr.get('isLoading'), false);
+  });
 });
 
 test('Sparse array length starts at 0', function(assert) {
