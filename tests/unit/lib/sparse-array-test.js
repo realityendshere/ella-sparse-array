@@ -6,8 +6,12 @@ import EllaSparseArray from 'ella-sparse-array/lib/sparse-array';
 var TOTAL_RECORDS = 103941;
 var requestCount = 0;
 
-var fetchTestObjects = function(offset, limit) {
+var fetchTestObjects = function(offset, limit, query) {
   var max = TOTAL_RECORDS;
+
+  if (!query) {
+    query = {};
+  }
 
   return new Ember.RSVP.Promise(function(resolve, reject) {
     var response = {};
@@ -29,7 +33,7 @@ var fetchTestObjects = function(offset, limit) {
     }
 
     response['data'] = data;
-    response['meta'] = {offset: offset, limit: limit, total: max};
+    response['meta'] = {offset: offset, limit: limit, total: max, query: query};
 
     // always succeed
     resolve(response);
@@ -66,9 +70,10 @@ var didRequestFunctions = {
 
     requestCount = requestCount + 1;
 
-    fetchTestObjects(range['start'], range['length']).then(function(response) {
+    fetchTestObjects(range['start'], range['length'], _this.get('remoteQuery')).then(function(response) {
       _this.provideLength(response.meta.total);
       _this.provideObjectsInRange(range, response['data']);
+      _this.set('_metaQuery', response.meta.query); // Test if remoteQuery gets through
     });
   }
 };
@@ -535,3 +540,41 @@ test('lastObject matches item at index length - 1', function(assert) {
   });
 });
 
+test('.filterBy sets remoteQuery property', function(assert) {
+  assert.expect(2);
+  var deferred = Ember.RSVP.defer();
+  var arr = EllaSparseArray.create(didRequestFunctions);
+  var query = {foo: 'bar', baz: 'hello, world'};
+
+  arr.filterBy(query);
+
+  assert.deepEqual(query, arr.get('remoteQuery'));
+
+  arr.objectAt(11);
+
+  Ember.run.later(function() {
+    deferred.resolve();
+  }, 50);
+
+  return deferred.promise.then(function() {
+    assert.deepEqual(query, arr.get('_metaQuery'));
+  });
+});
+
+test('.filterBy throws error when provided a non-object', function(assert) {
+  assert.expect(2);
+  var arr = EllaSparseArray.create(didRequestFunctions);
+  assert.throws(function() {return arr.filterBy('query');}, Error, 'throws an error when provided a string');
+  assert.throws(function() {return arr.filterBy(12);}, Error, 'throws an error when provided a number');
+});
+
+test('.filter always throws an error', function(assert) {
+  assert.expect(4);
+  var arr = EllaSparseArray.create(didRequestFunctions);
+  var query = {foo: 'bar', baz: 'hello, world'};
+
+  assert.throws(function() {return arr.filter('query');}, Error, 'throws an error when provided a string');
+  assert.throws(function() {return arr.filter(12);}, Error, 'throws an error when provided a number');
+  assert.throws(function() {return arr.filter(query);}, Error, 'throws an error when provided an object');
+  assert.throws(function() {return arr.filter(function(item) { return (item.id === 1);});}, Error, 'throws an error when provided a function');
+});

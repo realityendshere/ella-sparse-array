@@ -254,6 +254,15 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
   rangeSize: 10
 
   ###
+    A query hash to offer with each request.
+
+    @property remoteQuery
+    @type {Object|Null}
+    @default null
+  ###
+  remoteQuery: null
+
+  ###
     How long until a previously loaded item becomes stale.
     Default is 10 minutes.
 
@@ -388,6 +397,27 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
   ###
   expire: ->
     set(@, 'expired', Date.now())
+    @
+
+  ###
+    Disabled in sparse arrays. Not practical to support.
+
+    @method filter
+    @chainable
+  ###
+  filter: (fn = -> @) ->
+    Ember.assert("filter() not supported in sparse arrays. Use filterBy instead.")
+    @
+
+  ###
+    Sets the remoteQuery property to the provided value.
+
+    @method filterBy
+    @chainable
+  ###
+  filterBy: (obj = {}) ->
+    Ember.assert("filterBy only supports objects.", typeOf(obj) is 'object')
+    set(@, 'remoteQuery', obj)
     @
 
   ###
