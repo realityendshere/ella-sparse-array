@@ -561,6 +561,27 @@ test('.filterBy sets remoteQuery property', function(assert) {
   });
 });
 
+test('.filterBy causes isLength to become false only if length is 0', function(assert) {
+  assert.expect(5);
+  var arr = EllaSparseArray.create(doNothingRequestFunctions);
+  var query = {foo: 'bar', baz: 'hello, world'};
+
+  assert.equal(arr.get('isLength'), false);
+  arr.provideLength(0);
+  assert.equal(arr.get('isLength'), true);
+
+  arr.filterBy(query);
+  // isLength reverts to false if length is 0
+  assert.equal(arr.get('isLength'), false);
+  arr.provideLength(10);
+  assert.equal(arr.get('isLength'), true);
+
+  arr.filterBy({foo: 'pizza'});
+
+  // isLength remains true if length is NOT 0
+  assert.equal(arr.get('isLength'), true);
+});
+
 test('.filterBy throws error when provided a non-object', function(assert) {
   assert.expect(2);
   var arr = EllaSparseArray.create(didRequestFunctions);

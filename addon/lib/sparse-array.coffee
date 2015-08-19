@@ -417,7 +417,9 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
   ###
   filterBy: (obj = {}) ->
     Ember.assert("filterBy only supports objects.", typeOf(obj) is 'object')
-    set(@, 'remoteQuery', obj)
+    properties = remoteQuery: obj
+    properties._length = null if get(@, 'length') is 0
+    setProperties(@, properties)
     @
 
   ###
@@ -428,9 +430,8 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
   ###
   reset: ->
     @beginPropertyChanges()
-    len = get(@, '_length')
     @_clearData()
-    set(@, '_length', len)
+    set(@, '_length', null)
     @endPropertyChanges()
     @
 
