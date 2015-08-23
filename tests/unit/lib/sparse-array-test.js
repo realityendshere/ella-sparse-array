@@ -8,9 +8,16 @@ var requestCount = 0;
 
 var fetchTestObjects = function(offset, limit, query) {
   var max = TOTAL_RECORDS;
+  var reduceTotal;
 
   if (!query) {
     query = {};
+  }
+
+  reduceTotal = parseInt(query['reduceTotal'], 10);
+
+  if (reduceTotal && reduceTotal > 0) {
+    max = reduceTotal;
   }
 
   return new Ember.RSVP.Promise(function(resolve, reject) {
@@ -42,12 +49,83 @@ var fetchTestObjects = function(offset, limit, query) {
   });
 };
 
-var fetchLength = function() {
+var fetchLength = function(query) {
+  var max = TOTAL_RECORDS;
+  var reduceTotal;
+
+  if (!query) {
+    query = {};
+  }
+
+  reduceTotal = parseInt(query['reduceTotal'], 10);
+
+  if (reduceTotal && reduceTotal > 0) {
+    max = reduceTotal;
+  }
+
   return new Ember.RSVP.Promise(function(resolve, reject) {
     // always succeed
-    resolve(TOTAL_RECORDS);
+    resolve(max);
+
     // reject
     reject();
+  });
+};
+
+var slowFetchLength = function(query) {
+  var max = TOTAL_RECORDS;
+  var reduceTotal, wait = 50;
+
+  if (!query) {
+    query = {};
+  }
+
+  reduceTotal = parseInt(query['reduceTotal'], 10);
+
+  if (reduceTotal && reduceTotal > 0) {
+    max = reduceTotal;
+    wait = 10;
+  }
+
+  return new Ember.RSVP.Promise(function(resolve, reject) {
+    Ember.run.later(function() {
+      console.log("RESOLVE LENGTH QUERY ::", max);
+
+      // always succeed
+      resolve(max);
+
+      // reject
+      reject();
+    }, wait);
+  });
+};
+
+var didRequestLength = function(query) {
+  var _this = this;
+  fetchLength(query).then(function(response) {
+    _this.provideLength(response, query);
+  });
+};
+
+var didRequestLengthSlow = function(query) {
+  var _this = this;
+
+  slowFetchLength(query).then(function(response) {
+    _this.provideLength(response, query);
+  });
+};
+
+var didRequestRange = function(range, query) {
+  var _this = this;
+
+  console.log("Requesting ::", range);
+
+  requestCount = requestCount + 1;
+
+  fetchTestObjects(range['start'], range['length'], query).then(function(response) {
+    _this.provideLength(response.meta.total, query);
+    _this.provideObjectsInRange(range, response['data'], query);
+    _this.set('_metaQuery', response.meta.query); // Test if remoteQuery gets through
   });
 };
 
@@ -57,25 +135,13 @@ var doNothingRequestFunctions = {
 };
 
 var didRequestFunctions = {
-  didRequestLength: function() {
-    var _this = this;
-    fetchLength().then(function(response) {
-      _this.provideLength(response);
-    });
-  },
-  didRequestRange: function(range) {
-    var _this = this;
+  didRequestLength: didRequestLength,
+  didRequestRange: didRequestRange
+};
 
-    console.log("Requesting ::", range);
-
-    requestCount = requestCount + 1;
-
-    fetchTestObjects(range['start'], range['length'], _this.get('remoteQuery')).then(function(response) {
-      _this.provideLength(response.meta.total);
-      _this.provideObjectsInRange(range, response['data']);
-      _this.set('_metaQuery', response.meta.query); // Test if remoteQuery gets through
-    });
-  }
+var slowerDidRequestFunctions = {
+  didRequestLength: didRequestLengthSlow,
+  didRequestRange: didRequestRange
 };
 
 QUnit.module('ella-sparse-array:lib:sparse-array', {
@@ -561,7 +627,7 @@ test('.filterBy sets remoteQuery property', function(assert) {
   });
 });
 
-test('.filterBy causes isLength to become false only if length is 0', function(assert) {
+test('.filterBy causes isLength to become false', function(assert) {
   assert.expect(5);
   var arr = EllaSparseArray.create(doNothingRequestFunctions);
   var query = {foo: 'bar', baz: 'hello, world'};
@@ -573,14 +639,45 @@ test('.filterBy causes isLength to become false only if length is 0', function(a
   arr.filterBy(query);
   // isLength reverts to false if length is 0
   assert.equal(arr.get('isLength'), false);
-  arr.provideLength(10);
+  arr.provideLength(10, query);
   assert.equal(arr.get('isLength'), true);
 
   arr.filterBy({foo: 'pizza'});
 
-  // isLength remains true if length is NOT 0
-  assert.equal(arr.get('isLength'), true);
+  // isLength reverts to false if length is NOT 0
+  assert.equal(arr.get('isLength'), false);
 });
+
+test('.filterBy sets remoteQueryJSON', function(assert) {
+  assert.expect(2);
+  var arr = EllaSparseArray.create(slowerDidRequestFunctions);
+  var query = {foo: 'bar', baz: 'hello, world'};
+
+  assert.equal(arr.get('remoteQueryJSON'), '{}');
+  arr.filterBy(query);
+  assert.equal(arr.get('remoteQueryJSON'), JSON.stringify(query));
+});
+
+test('Responses to previous filterBy objects are ignored', function(assert) {
+  assert.expect(1);
+  var deferred = Ember.RSVP.defer();
+  var arr = EllaSparseArray.create(slowerDidRequestFunctions);
+  var query = {reduceTotal: 1337};
+
+  arr.get('length');
+  arr.filterBy(query);
+
+  arr.get('length');
+
+  Ember.run.later(function() {
+    deferred.resolve();
+  }, 100);
+
+  return deferred.promise.then(function() {
+    assert.equal(arr.get('length'), 1337);
+  });
+});
+
 
 test('.filterBy throws error when provided a non-object', function(assert) {
   assert.expect(2);

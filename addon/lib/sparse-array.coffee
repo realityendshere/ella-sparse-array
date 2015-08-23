@@ -282,7 +282,7 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
     @default 0
     @readOnly
   ###
-  length: computed('_length', 'isLength', {
+  length: computed('_length', 'isLength', 'remoteQueryJSON', {
     get: ->
       if get(@, 'isLength')
         get(@, '_length')
@@ -326,6 +326,21 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
       len = get(@, 'length')
       return undefined if len is 0
       @objectAt(len - 1)
+  })
+
+  ###
+    The remoteQuery object in JSON format (for comparisons).
+
+    @property remoteQueryJSON
+    @type String
+    @default '{}'
+    @readOnly
+  ###
+  remoteQueryJSON: computed('remoteQuery', {
+    get: ->
+      remoteQuery = get(@, 'remoteQuery')
+      return '{}' unless remoteQuery?
+      JSON.stringify(remoteQuery)
   })
 
   ###
@@ -417,10 +432,23 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
   ###
   filterBy: (obj = {}) ->
     Ember.assert("filterBy only supports objects.", typeOf(obj) is 'object')
-    properties = remoteQuery: obj
-    properties._length = null if get(@, 'length') is 0
-    setProperties(@, properties)
+    currentQuery = get(@, 'remoteQueryJSON')
+    setProperties(@, remoteQuery: obj, isRequestingLength: false, _length: null)
+    @expire() unless currentQuery is get(@, 'remoteQueryJSON')
     @
+
+  ###
+    Compares the query/filter associated to a response to the current value
+    of `remoteQuery`. If they match, then request filters are up to date and
+    data in response can be captured into the sparse array. Otherwise, data
+    in the response is likely out of sync and will be ignored.
+
+    @method isResponseForQueryRelevant
+    @param Object query A query object to compare to the current remoteQuery
+    @return Boolean
+  ###
+  isResponseForQueryRelevant: (query = {}) ->
+    JSON.stringify(query) is get(@, 'remoteQueryJSON')
 
   ###
     Empty the sparse data. (The "nuclear option.")
@@ -483,9 +511,10 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
     @param {Integer} length The total number of available objects
     @chainable
   ###
-  provideLength: (length) ->
-    set @, '_length', length
+  provideLength: (length, query) ->
     set @, 'isRequestingLength', false
+    return @ unless @isResponseForQueryRelevant(query)
+    set @, '_length', length
     @_lengthDidChange()
     @
 
@@ -501,7 +530,8 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
     @param {Array} array The data to inject into the sparse array
     @chainable
   ###
-  provideObjectsInRange: (range, array) ->
+  provideObjectsInRange: (range, array, query) ->
+    return @ unless @isResponseForQueryRelevant(query)
     for value, idx in array
       item = get(@, @_pathForIndex(range.start + idx))
       item?.resolve(value)
@@ -553,7 +583,6 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
 
     get(@, @_pathForIndex(idx))
 
-
   ###
     @private
 
@@ -563,7 +592,7 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
     @method _didRequestLength
   ###
   _didRequestLength: ->
-    @didRequestLength.call(@)
+    @didRequestLength.call(@, get(@, 'remoteQuery'))
 
   ###
     @private
@@ -579,7 +608,7 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
   ###
   _didRequestRange: (range) ->
     @_markSparseArrayItemInProgress(idx) for idx in [range.start...(range.start + range.length)]
-    @didRequestRange.call(@, range)
+    @didRequestRange.call(@, range, get(@, 'remoteQuery'))
 
   ###
     @private
@@ -591,7 +620,7 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
   ###
   _didRequestIndex: (idx) ->
     @_markSparseArrayItemInProgress(idx)
-    @didRequestIndex.call(@, idx)
+    @didRequestIndex.call(@, idx, get(@, 'remoteQuery'))
 
   ###
     @private
@@ -626,6 +655,16 @@ EllaSparseArray = Ember.Object.extend Ember.Array,
     item?.resetItem()
     @
 
+  ###
+    @private
+
+    Obtain an `Ember.get` compatible path for fetching data from the internal
+    sparse array.
+
+    @method _pathForIndex
+    @param Integer idx The index to build a path to
+    @return String
+  ###
   _pathForIndex: (idx) ->
     ['data', idx].join('.')
 
